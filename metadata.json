@@ -1,0 +1,8 @@
+{
+  "name": "Remix MUSCLE MATCH",
+  "description": "筋肉を愛する人と、筋肉を磨く人をつなぐ高級フィットネス＆マッチングアプリ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

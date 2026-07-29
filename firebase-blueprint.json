@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "Registered user accounts and fitness profiles",
+      "properties": {
+        "id": { "type": "string", "description": "Auth UID" },
+        "name": { "type": "string", "description": "Display name" },
+        "age": { "type": "number", "description": "User age" },
+        "gender": { "type": "string", "enum": ["male", "female"] },
+        "role": { "type": "string", "enum": ["trainee", "muscle_lover"] },
+        "avatar": { "type": "string", "description": "Avatar image URL or Base64" },
+        "photos": { "type": "array", "items": { "type": "string" } },
+        "bio": { "type": "string" },
+        "location": { "type": "string" },
+        "gymLocation": { "type": "string" },
+        "distanceKm": { "type": "number" },
+        "heightCm": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "bodyFatPercentage": { "type": "number" },
+        "bodyType": { "type": "string" },
+        "trainingYears": { "type": "number" },
+        "weeklyFrequency": { "type": "number" },
+        "benchPressMaxKg": { "type": "number" },
+        "squatMaxKg": { "type": "number" },
+        "deadliftMaxKg": { "type": "number" },
+        "favoriteMuscles": { "type": "array", "items": { "type": "string" } },
+        "preferredGymBrand": { "type": "string" },
+        "purpose": { "type": "array", "items": { "type": "string" } },
+        "badges": { "type": "array", "items": { "type": "object" } },
+        "verified": { "type": "boolean" },
+        "isOnline": { "type": "boolean" },
+        "lastActive": { "type": "string" },
+        "job": { "type": "string" },
+        "holidayActivity": { "type": "string" },
+        "hobbies": { "type": "string" },
+        "drinking": { "type": "string" },
+        "smoking": { "type": "string" },
+        "favoriteExercise": { "type": "string" },
+        "competitionExperience": { "type": "string" },
+        "profileCompleted": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "role", "gender"]
+    },
+    "likes": {
+      "title": "User Likes",
+      "description": "Swipe right or superlike records",
+      "properties": {
+        "fromUserId": { "type": "string" },
+        "toUserId": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "superlike"] }
+      },
+      "required": ["fromUserId", "toUserId"]
+    },
+    "passes": {
+      "title": "User Passes",
+      "description": "Swipe left records",
+      "properties": {
+        "fromUserId": { "type": "string" },
+        "toUserId": { "type": "string" }
+      },
+      "required": ["fromUserId", "toUserId"]
+    },
+    "matches": {
+      "title": "Match Connections",
+      "description": "Mutual matches between users",
+      "properties": {
+        "id": { "type": "string" },
+        "users": { "type": "array", "items": { "type": "string" } },
+        "matchedAt": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "lastMessageTime": { "type": "string" },
+        "unreadCount": { "type": "number" },
+        "isNewMatch": { "type": "boolean" }
+      },
+      "required": ["id", "users"]
+    },
+    "blocks": {
+      "title": "User Blocks",
+      "description": "Block user relationships",
+      "properties": {
+        "fromUserId": { "type": "string" },
+        "blockedUserId": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "required": ["fromUserId", "blockedUserId"]
+    },
+    "reports": {
+      "title": "User Reports",
+      "description": "User reports for moderation",
+      "properties": {
+        "reporterId": { "type": "string" },
+        "reportedUserId": { "type": "string" },
+        "reason": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["reporterId", "reportedUserId", "reason"]
+    }
+  }
+}
