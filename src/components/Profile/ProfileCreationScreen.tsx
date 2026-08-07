@@ -86,6 +86,7 @@ export const ProfileCreationScreen: React.FC<ProfileCreationScreenProps> = ({
         if (onUpdateUser && currentUser) {
           const updated: UserProfile = {
             ...currentUser,
+            profileCompleted: true,
             name,
             age,
             gender,

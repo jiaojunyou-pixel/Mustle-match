@@ -4,11 +4,10 @@ import { Dumbbell, Heart, ArrowRight, Check, AlertCircle, Loader2 } from 'lucide
 
 interface SignUpScreenProps {
   onNavigate: (screen: AppScreen) => void;
-  onSignUpComplete: (role: UserRole) => void;
   onSignUpWithEmail?: (email: string, pass: string, role: UserRole, name: string, gender: Gender) => Promise<void>;
 }
 
-export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigate, onSignUpComplete, onSignUpWithEmail }) => {
+export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigate, onSignUpWithEmail }) => {
   const [role, setRole] = useState<UserRole>('trainee');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -38,7 +37,6 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigate, onSignUp
       setErrorMsg(null);
       try {
         await onSignUpWithEmail(email, password, role, name, gender);
-        onNavigate('profile_creation');
       } catch (err: any) {
         console.error('Signup error:', err);
         let msg = 'アカウント登録に失敗しました。入力内容を確認してください。';
@@ -54,8 +52,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onNavigate, onSignUp
         setLoading(false);
       }
     } else {
-      onSignUpComplete(role);
-      onNavigate('profile_creation');
+      setErrorMsg('Firebase Authenticationを利用できません。設定を確認してください。');
     }
   };
 

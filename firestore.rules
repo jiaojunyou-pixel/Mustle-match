@@ -1,35 +1,214 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function hasOnly(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    function isMatchParticipant(matchData) {
+      return isSignedIn()
+        && matchData.users is list
+        && request.auth.uid in matchData.users;
+    }
+
+    function matchExists(matchId) {
+      return exists(/databases/$(database)/documents/matches/$(matchId));
+    }
+
+    function storedMatch(matchId) {
+      return get(/databases/$(database)/documents/matches/$(matchId)).data;
+    }
+
+    function otherMatchUser(matchData) {
+      return matchData.users[0] == request.auth.uid
+        ? matchData.users[1]
+        : matchData.users[0];
+    }
+
+    function isValidMatchCreation(matchId) {
+      let data = request.resource.data;
+      let otherUserId = otherMatchUser(data);
+      let ownLikePath = /databases/$(database)/documents/likes/$(request.auth.uid + '_' + otherUserId);
+      let reverseLikePath = /databases/$(database)/documents/likes/$(otherUserId + '_' + request.auth.uid);
+      return isMatchParticipant(data)
+        && data.users.size() == 2
+        && data.users[0] != data.users[1]
+        && data.id == matchId
+        && matchId == 'match_' + data.users[0] + '_' + data.users[1]
+        && exists(ownLikePath)
+        && get(ownLikePath).data.fromUserId == request.auth.uid
+        && get(ownLikePath).data.toUserId == otherUserId
+        && (
+          exists(reverseLikePath)
+          || get(ownLikePath).data.type == 'superlike'
+        );
+    }
 
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create: if isSelf(userId)
+        && request.resource.data.id == request.auth.uid;
+      allow update: if isSelf(userId)
+        && resource.data.id == request.auth.uid
+        && request.resource.data.id == request.auth.uid;
+      allow delete: if false;
     }
 
     match /likes/{likeId} {
-      allow read, write: if true;
+      allow read: if isSignedIn()
+        && (
+          resource.data.fromUserId == request.auth.uid
+          || resource.data.toUserId == request.auth.uid
+        );
+      allow create: if isSignedIn()
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId is string
+        && request.resource.data.toUserId != request.auth.uid
+        && likeId == request.auth.uid + '_' + request.resource.data.toUserId
+        && hasOnly(request.resource.data, ['fromUserId', 'toUserId', 'type', 'createdAt'])
+        && request.resource.data.type in ['like', 'superlike']
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId == resource.data.toUserId
+        && likeId == request.auth.uid + '_' + resource.data.toUserId
+        && hasOnly(request.resource.data, ['fromUserId', 'toUserId', 'type', 'createdAt'])
+        && request.resource.data.type in ['like', 'superlike']
+        && request.resource.data.createdAt is timestamp;
+      allow delete: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid;
     }
 
     match /passes/{passId} {
-      allow read, write: if true;
+      allow read: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId is string
+        && request.resource.data.toUserId != request.auth.uid
+        && passId == request.auth.uid + '_' + request.resource.data.toUserId
+        && hasOnly(request.resource.data, ['fromUserId', 'toUserId', 'createdAt'])
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId == resource.data.toUserId
+        && passId == request.auth.uid + '_' + resource.data.toUserId
+        && hasOnly(request.resource.data, ['fromUserId', 'toUserId', 'createdAt'])
+        && request.resource.data.createdAt is timestamp;
+      allow delete: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid;
     }
 
     match /matches/{matchId} {
-      allow read, write: if true;
+      allow read: if isMatchParticipant(resource.data);
+      allow create: if isSignedIn()
+        && hasOnly(request.resource.data, [
+          'id', 'users', 'matchedAt', 'lastMessage', 'lastMessageTime',
+          'unreadCount', 'isNewMatch', 'createdAt', 'updatedAt',
+          'workoutSessionProposed'
+        ])
+        && request.resource.data.matchedAt is string
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessageTime is string
+        && request.resource.data.unreadCount is int
+        && request.resource.data.unreadCount >= 0
+        && request.resource.data.isNewMatch is bool
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
+        && (!('workoutSessionProposed' in request.resource.data)
+          || request.resource.data.workoutSessionProposed is bool)
+        && isValidMatchCreation(matchId);
+      allow update: if isMatchParticipant(resource.data)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.users == resource.data.users
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'lastMessage', 'lastMessageTime', 'unreadCount', 'isNewMatch',
+          'updatedAt', 'workoutSessionProposed'
+        ])
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessageTime is string
+        && request.resource.data.unreadCount is int
+        && request.resource.data.unreadCount >= 0
+        && request.resource.data.isNewMatch is bool
+        && request.resource.data.updatedAt is timestamp
+        && (!('workoutSessionProposed' in request.resource.data)
+          || request.resource.data.workoutSessionProposed is bool);
+      allow delete: if isMatchParticipant(resource.data);
 
       match /messages/{messageId} {
-        allow read, write: if true;
+        allow read: if matchExists(matchId)
+          && isMatchParticipant(storedMatch(matchId));
+        allow create: if matchExists(matchId)
+          && isMatchParticipant(storedMatch(matchId))
+          && request.resource.data.matchId == matchId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000
+          && request.resource.data.timestamp is string
+          && hasOnly(request.resource.data, [
+            'matchId', 'senderId', 'text', 'timestamp', 'createdAt',
+            'isPraiseSticker', 'praiseCategory', 'gymInvite'
+          ])
+          && (!('isPraiseSticker' in request.resource.data)
+            || request.resource.data.isPraiseSticker is bool)
+          && (!('praiseCategory' in request.resource.data)
+            || request.resource.data.praiseCategory == null
+            || request.resource.data.praiseCategory in ['bulk', 'cut', 'style', 'gym'])
+          && (!('gymInvite' in request.resource.data)
+            || request.resource.data.gymInvite == null
+            || request.resource.data.gymInvite is map);
+        allow update, delete: if false;
       }
     }
 
     match /blocks/{blockId} {
-      allow read, write: if true;
+      allow read: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.blockedUserId is string
+        && request.resource.data.blockedUserId != request.auth.uid
+        && blockId == request.auth.uid + '_' + request.resource.data.blockedUserId
+        && hasOnly(request.resource.data, ['fromUserId', 'blockedUserId', 'reason', 'createdAt'])
+        && request.resource.data.reason is string
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.blockedUserId == resource.data.blockedUserId
+        && blockId == request.auth.uid + '_' + resource.data.blockedUserId
+        && hasOnly(request.resource.data, ['fromUserId', 'blockedUserId', 'reason', 'createdAt'])
+        && request.resource.data.reason is string
+        && request.resource.data.createdAt is timestamp;
+      allow delete: if isSignedIn()
+        && resource.data.fromUserId == request.auth.uid;
     }
 
     match /reports/{reportId} {
-      allow read, write: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reportedUserId is string
+        && request.resource.data.reportedUserId != request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.details is string
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt is timestamp
+        && hasOnly(request.resource.data, [
+          'reporterId', 'reportedUserId', 'reason', 'details', 'status', 'createdAt'
+        ]);
+      allow read, update, delete: if false;
     }
   }
 }
-
-

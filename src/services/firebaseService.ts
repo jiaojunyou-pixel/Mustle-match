@@ -31,6 +31,17 @@ import rawData from '../data/dummyUsers.json';
 
 const DUMMY_IDS = new Set(['user_takumi', 'user_misaki', 'user_kenji', 'user_yuki', 'user_ren', 'user_erika', 'user_tanaka', 'user_sato']);
 
+function requireAuthenticatedUid(expectedUid?: string): string {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    throw new Error('Firebase Authentication is required for this operation.');
+  }
+  if (expectedUid && uid !== expectedUid) {
+    throw new Error('Authenticated user does not match the requested user ID.');
+  }
+  return uid;
+}
+
 export function isDummyUser(user: Partial<UserProfile> | null | undefined): boolean {
   if (!user) return false;
   if (user.isDummy === true) return true;
@@ -86,27 +97,8 @@ export async function registerWithEmail(
   name: string,
   gender: Gender
 ): Promise<UserProfile> {
-  let uid: string;
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    uid = cred.user.uid;
-  } catch (err: any) {
-    if (err?.code === 'auth/operation-not-allowed' || err?.code === 'auth/admin-restricted-operation') {
-      console.warn('Firebase Email/Password auth is not enabled. Falling back to anonymous auth session.');
-      if (auth.currentUser) {
-        uid = auth.currentUser.uid;
-      } else {
-        try {
-          const anon = await signInAnonymously(auth);
-          uid = anon.user.uid;
-        } catch {
-          uid = 'user_reg_' + Date.now();
-        }
-      }
-    } else {
-      throw err;
-    }
-  }
+  const cred = await createUserWithEmailAndPassword(auth, email, pass);
+  const uid = cred.user.uid;
 
   const newUserProfile: UserProfile = {
     id: uid,
@@ -139,51 +131,26 @@ export async function registerWithEmail(
     ],
     verified: true,
     isOnline: true,
+    profileCompleted: false,
     lastActive: '今アクティブ'
   };
 
-  try {
-    await setDoc(doc(db, 'users', uid), {
-      ...newUserProfile,
-      createdAt: serverTimestamp()
-    });
-  } catch (e) {
-    console.error('Failed to save user profile to Firestore:', e);
-  }
+  await setDoc(doc(db, 'users', uid), {
+    ...newUserProfile,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
 
   return newUserProfile;
 }
 
 export async function loginWithEmail(email: string, pass: string): Promise<UserProfile> {
-  let uid: string;
-  try {
-    const cred = await signInWithEmailAndPassword(auth, email, pass);
-    uid = cred.user.uid;
-  } catch (err: any) {
-    if (err?.code === 'auth/operation-not-allowed' || err?.code === 'auth/admin-restricted-operation') {
-      console.warn('Firebase Email/Password auth is not enabled. Falling back to anonymous auth session.');
-      if (auth.currentUser) {
-        uid = auth.currentUser.uid;
-      } else {
-        try {
-          const anon = await signInAnonymously(auth);
-          uid = anon.user.uid;
-        } catch {
-          uid = 'user_login_' + Date.now();
-        }
-      }
-    } else {
-      throw err;
-    }
-  }
+  const cred = await signInWithEmailAndPassword(auth, email, pass);
+  const uid = cred.user.uid;
 
-  try {
-    const userDoc = await getDoc(doc(db, 'users', uid));
-    if (userDoc.exists()) {
-      return userDoc.data() as UserProfile;
-    }
-  } catch (e) {
-    console.error('Error fetching user profile during login:', e);
+  const userDoc = await getDoc(doc(db, 'users', uid));
+  if (userDoc.exists()) {
+    return userDoc.data() as UserProfile;
   }
 
   // Fallback profile for real user if doc not found
@@ -215,24 +182,20 @@ export async function loginWithEmail(email: string, pass: string): Promise<UserP
     lastActive: '今アクティブ',
     isDummy: false
   };
-  try {
-    await setDoc(doc(db, 'users', uid), fallback);
-  } catch (e) {
-    console.error('Failed to set fallback profile in Firestore:', e);
-  }
+  fallback.profileCompleted = false;
+  await setDoc(doc(db, 'users', uid), {
+    ...fallback,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
   return fallback;
 }
 
 export async function loginAsDemo(role: 'trainee' | 'muscle_lover'): Promise<UserProfile> {
   let uid = auth.currentUser?.uid;
   if (!uid) {
-    try {
-      const cred = await signInAnonymously(auth);
-      uid = cred.user.uid;
-    } catch (err) {
-      console.warn('Anonymous login restricted/failed, using fallback demo ID:', err);
-      uid = role === 'muscle_lover' ? 'user_misaki' : 'user_takumi';
-    }
+    const cred = await signInAnonymously(auth);
+    uid = cred.user.uid;
   }
 
   let baseProfile: UserProfile;
@@ -243,15 +206,13 @@ export async function loginAsDemo(role: 'trainee' | 'muscle_lover'): Promise<Use
     baseProfile = { ...(rawData.currentUser as unknown as UserProfile), id: uid, role: 'trainee' };
   }
 
-  try {
-    await setDoc(doc(db, 'users', uid), {
-      ...baseProfile,
-      isOnline: true,
-      lastActive: '今アクティブ'
-    }, { merge: true });
-  } catch (e) {
-    console.error('Error saving demo user profile:', e);
-  }
+  await setDoc(doc(db, 'users', uid), {
+    ...baseProfile,
+    id: uid,
+    profileCompleted: true,
+    isOnline: true,
+    lastActive: '今アクティブ'
+  }, { merge: true });
 
   return baseProfile;
 }
@@ -274,7 +235,32 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   }
 }
 
+export async function ensureUserProfile(uid: string): Promise<UserProfile> {
+  requireAuthenticatedUid(uid);
+  const snap = await getDoc(doc(db, 'users', uid));
+  if (snap.exists()) {
+    return snap.data() as UserProfile;
+  }
+
+  const template = rawData.currentUser as unknown as UserProfile;
+  const profile: UserProfile = {
+    ...template,
+    id: uid,
+    name: 'NEW USER',
+    isDummy: false,
+    verified: false,
+    profileCompleted: false,
+  };
+  await setDoc(doc(db, 'users', uid), {
+    ...profile,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return profile;
+}
+
 export async function updateUserProfile(uid: string, updates: Partial<UserProfile>) {
+  requireAuthenticatedUid(uid);
   try {
     await setDoc(doc(db, 'users', uid), {
       ...updates,
@@ -303,7 +289,7 @@ export async function fetchCandidatesForUser(
   isDemoMode: boolean = false
 ): Promise<UserProfile[]> {
   try {
-    const authUid = auth.currentUser?.uid || currentUserId;
+    const authUid = requireAuthenticatedUid(currentUserId);
 
     // Get user's swiped/passed/blocked IDs
     const swipedSnap = await getDocs(query(collection(db, 'likes'), where('fromUserId', '==', currentUserId)));
@@ -395,6 +381,7 @@ export async function fetchCandidatesForUser(
 
 export async function fetchLikesReceivedForUser(currentUserId: string): Promise<UserProfile[]> {
   try {
+    requireAuthenticatedUid(currentUserId);
     const likesSnap = await getDocs(query(collection(db, 'likes'), where('toUserId', '==', currentUserId)));
     const likers: UserProfile[] = [];
 
@@ -424,6 +411,7 @@ export async function swipeRightUser(
   isSuperLike: boolean = false
 ): Promise<boolean> {
   try {
+    requireAuthenticatedUid(fromUserId);
     const likeDocId = `${fromUserId}_${toUser.id}`;
     await setDoc(doc(db, 'likes', likeDocId), {
       fromUserId,
@@ -460,7 +448,10 @@ export async function swipeRightUser(
         // Add welcome message
         await addDoc(collection(db, 'matches', matchId, 'messages'), {
           matchId,
-          senderId: toUser.id,
+          // Security Rules require every user-authored message to identify the
+          // authenticated sender. System messages should move to a trusted
+          // backend in a future task.
+          senderId: fromUserId,
           text: `マッチありがとうございます✨ 筋肉を追い込んで最高のマッチングにしましょう！`,
           timestamp: '今',
           createdAt: serverTimestamp()
@@ -479,6 +470,7 @@ export async function swipeRightUser(
 
 export async function swipeLeftUser(fromUserId: string, toUserId: string) {
   try {
+    requireAuthenticatedUid(fromUserId);
     const passDocId = `${fromUserId}_${toUserId}`;
     await setDoc(doc(db, 'passes', passDocId), {
       fromUserId,
@@ -495,6 +487,7 @@ export function subscribeToUserMatches(
   currentUserId: string,
   callback: (matches: MatchItem[]) => void
 ) {
+  requireAuthenticatedUid(currentUserId);
   const q = query(
     collection(db, 'matches'),
     where('users', 'array-contains', currentUserId)
@@ -534,6 +527,7 @@ export function subscribeToMessages(
   matchId: string,
   callback: (messages: ChatMessage[]) => void
 ) {
+  requireAuthenticatedUid();
   const q = query(
     collection(db, 'matches', matchId, 'messages'),
     orderBy('createdAt', 'asc')
@@ -565,6 +559,7 @@ export async function sendMessage(
   gymInvite?: GymInvite
 ) {
   try {
+    requireAuthenticatedUid(senderId);
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     await addDoc(collection(db, 'matches', matchId, 'messages'), {
@@ -590,6 +585,7 @@ export async function sendMessage(
 // --- BLOCK & REPORT SERVICES ---
 export async function blockUserInFirebase(fromUserId: string, blockedUserId: string, reason: string) {
   try {
+    requireAuthenticatedUid(fromUserId);
     const blockDocId = `${fromUserId}_${blockedUserId}`;
     await setDoc(doc(db, 'blocks', blockDocId), {
       fromUserId,
@@ -616,6 +612,7 @@ export async function reportUserInFirebase(
   details: string
 ) {
   try {
+    requireAuthenticatedUid(reporterId);
     await addDoc(collection(db, 'reports'), {
       reporterId,
       reportedUserId,

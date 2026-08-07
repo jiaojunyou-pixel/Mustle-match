@@ -4,9 +4,11 @@ import { Dumbbell, ShieldCheck, Sparkles, ArrowRight, CheckCircle2, Trophy, Hear
 
 interface LandingPageProps {
   onNavigate: (screen: AppScreen) => void;
+  demoMode?: boolean;
+  onDemoLogin?: () => Promise<void>;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, demoMode = false, onDemoLogin }) => {
   const [activeCardIndex, setActiveCardIndex] = useState(0);
 
   // 3~5 Sample profile preview cards for Section 2
@@ -130,12 +132,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             ログインはこちら
           </button>
 
-          <button
-            onClick={() => onNavigate('discovery')}
+          {demoMode && <button
+            onClick={() => void onDemoLogin?.()}
             className="text-[11px] text-zinc-500 hover:text-orange-400 font-bold tracking-wider pt-1 transition block mx-auto"
           >
             ログインなしでデモを試す →
-          </button>
+          </button>}
         </div>
 
       </section>
