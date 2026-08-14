@@ -1,6 +1,6 @@
 {
   "firestore": {
-    "database": "ai-studio-remixmusclematch-dd8625e5-97b5-4124-81b0-9ff72c0382af",
+    "database": "(default)",
     "rules": "firestore.rules"
   },
   "emulators": {
