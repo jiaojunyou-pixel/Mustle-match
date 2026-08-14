@@ -15,7 +15,6 @@ service cloud.firestore {
 
     function isMatchParticipant(matchData) {
       return isSignedIn()
-        && matchData.users is list
         && request.auth.uid in matchData.users;
     }
 
