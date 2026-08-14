@@ -6,9 +6,10 @@ interface LoginScreenProps {
   onNavigate: (screen: AppScreen) => void;
   onLoginAs: (role: 'trainee' | 'muscle_lover') => void;
   onEmailLogin?: (email: string, pass: string) => Promise<void>;
+  demoMode?: boolean;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs, onEmailLogin }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs, onEmailLogin, demoMode = false }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showDemoBox, setShowDemoBox] = useState(false);
@@ -27,7 +28,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs,
       setErrorMsg(null);
       try {
         await onEmailLogin(email, password);
-        onNavigate('discovery');
       } catch (err: any) {
         console.error('Login error:', err);
         let msg = 'ログインに失敗しました。メールアドレスとパスワードをご確認ください。';
@@ -43,8 +43,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs,
         setLoading(false);
       }
     } else {
-      onLoginAs('trainee');
-      onNavigate('discovery');
+      setErrorMsg('Firebase Authenticationを利用できません。設定を確認してください。');
     }
   };
 
@@ -65,8 +64,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs,
           </p>
         </div>
 
-        {/* Social / OAuth Login Options (Future Expansion Structure) */}
-        <div className="space-y-2 mb-6">
+        {/* Demo-only placeholders. These are not real OAuth providers. */}
+        {demoMode && <div className="space-y-2 mb-6">
           <button
             onClick={() => {
               onLoginAs('trainee');
@@ -106,7 +105,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs,
             <span className="font-extrabold tracking-wider">LINE</span>
             <span>LINEでログイン</span>
           </button>
-        </div>
+        </div>}
 
         {/* Separator */}
         <div className="relative my-5">
@@ -187,7 +186,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs,
         </form>
 
         {/* Development & Demo Instant Login Drawer (Separated from production UI) */}
-        <div className="mt-8 border-t border-zinc-900 pt-4">
+        {demoMode && <div className="mt-8 border-t border-zinc-900 pt-4">
           <button
             type="button"
             onClick={() => setShowDemoBox(!showDemoBox)}
@@ -235,7 +234,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onNavigate, onLoginAs,
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
       </div>
 

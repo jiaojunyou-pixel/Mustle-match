@@ -10,9 +10,9 @@ interface SwipeDiscoveryProps {
   currentUser: UserProfile;
   filter: DiscoveryFilter;
   onApplyFilter: (filter: DiscoveryFilter) => void;
-  onSwipeRight: (user: UserProfile) => boolean;
+  onSwipeRight: (user: UserProfile) => Promise<boolean>;
   onSwipeLeft: (user: UserProfile) => void;
-  onSuperLike: (user: UserProfile) => boolean;
+  onSuperLike: (user: UserProfile) => Promise<boolean>;
   onStartChat: (user: UserProfile) => void;
   onBlockUser?: (userId: string) => void;
 }
@@ -32,6 +32,8 @@ export const SwipeDiscovery: React.FC<SwipeDiscoveryProps> = ({
   const [detailUser, setDetailUser] = useState<UserProfile | null>(null);
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
   const [matchedUserCelebration, setMatchedUserCelebration] = useState<UserProfile | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Gesture state
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -77,13 +79,20 @@ export const SwipeDiscovery: React.FC<SwipeDiscoveryProps> = ({
   };
 
   // Actions
-  const triggerLike = () => {
-    if (!currentCandidate) return;
-    const isMatch = onSwipeRight(currentCandidate);
-    if (isMatch) {
-      setMatchedUserCelebration(currentCandidate);
+  const triggerLike = async () => {
+    if (!currentCandidate || isSubmitting) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      const isMatch = await onSwipeRight(currentCandidate);
+      if (isMatch) setMatchedUserCelebration(currentCandidate);
+      advanceCard();
+    } catch (error) {
+      console.error('Like failed:', error);
+      setActionError('LIKEを保存できませんでした。通信状態を確認して、もう一度お試しください。');
+    } finally {
+      setIsSubmitting(false);
     }
-    advanceCard();
   };
 
   const triggerPass = () => {
@@ -92,13 +101,20 @@ export const SwipeDiscovery: React.FC<SwipeDiscoveryProps> = ({
     advanceCard();
   };
 
-  const triggerSuperLike = () => {
-    if (!currentCandidate) return;
-    const isMatch = onSuperLike(currentCandidate);
-    if (isMatch) {
-      setMatchedUserCelebration(currentCandidate);
+  const triggerSuperLike = async () => {
+    if (!currentCandidate || isSubmitting) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      const isMatch = await onSuperLike(currentCandidate);
+      if (isMatch) setMatchedUserCelebration(currentCandidate);
+      advanceCard();
+    } catch (error) {
+      console.error('Super Like failed:', error);
+      setActionError('SUPER LIKEを保存できませんでした。通信状態を確認して、もう一度お試しください。');
+    } finally {
+      setIsSubmitting(false);
     }
-    advanceCard();
   };
 
   const advanceCard = () => {
@@ -292,7 +308,9 @@ export const SwipeDiscovery: React.FC<SwipeDiscoveryProps> = ({
 
       {/* One-Handed Smartphone Ergonomic Swipe Bar */}
       {currentCandidate && (
-        <div className="flex items-center justify-center space-x-5 py-2 max-w-xs mx-auto w-full">
+        <div className="flex flex-col items-center gap-2 py-2 max-w-xs mx-auto w-full">
+          {actionError && <p role="alert" className="text-xs text-red-400 text-center">{actionError}</p>}
+          <div className="flex items-center justify-center space-x-5 w-full">
           {/* Rewind */}
           <button
             onClick={handleRewind}
@@ -315,6 +333,7 @@ export const SwipeDiscovery: React.FC<SwipeDiscoveryProps> = ({
           {/* SUPER LIKE (★) */}
           <button
             onClick={triggerSuperLike}
+            disabled={isSubmitting}
             className="w-12 h-12 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-200 hover:text-white flex items-center justify-center transition active:scale-95"
             title="SUPER LIKE"
           >
@@ -324,11 +343,13 @@ export const SwipeDiscovery: React.FC<SwipeDiscoveryProps> = ({
           {/* LIKE (♥) */}
           <button
             onClick={triggerLike}
+            disabled={isSubmitting}
             className="w-16 h-16 rounded-full bg-orange-500 text-zinc-950 shadow-lg shadow-orange-500/20 flex items-center justify-center hover:bg-orange-400 transition active:scale-95"
             title="LIKE"
           >
             <Heart className="w-7 h-7 fill-zinc-950 stroke-none" />
           </button>
+          </div>
         </div>
       )}
 

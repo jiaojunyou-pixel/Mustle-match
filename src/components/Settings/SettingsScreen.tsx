@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { UserProfile, DiscoveryFilter, AppScreen } from '../../types';
-import { Settings as SettingsIcon, Bell, Sparkles, UserCheck, LogOut, RotateCcw, SlidersHorizontal, ChevronRight, Crown } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Sparkles, UserCheck, LogOut, SlidersHorizontal, ChevronRight, Crown } from 'lucide-react';
 
 interface SettingsScreenProps {
   currentUser: UserProfile;
   filter: DiscoveryFilter;
   onApplyFilter: (newFilter: DiscoveryFilter) => void;
   onRoleToggle: () => void;
-  onResetData: () => void;
+  onLogout: () => Promise<void>;
   onNavigate: (screen: AppScreen) => void;
 }
 
@@ -16,12 +16,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   filter,
   onApplyFilter,
   onRoleToggle,
-  onResetData,
+  onLogout,
   onNavigate
 }) => {
   const [notifyMatches, setNotifyMatches] = useState(true);
   const [notifyMessages, setNotifyMessages] = useState(true);
   const [notifyGymInvites, setNotifyGymInvites] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    setLogoutError(null);
+    try {
+      await onLogout();
+    } catch {
+      setLogoutError('ログアウトに失敗しました。通信状態を確認して、もう一度お試しください。');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 text-zinc-100 p-4 max-w-md mx-auto pb-28 space-y-4">
@@ -155,23 +169,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       {/* Actions */}
       <div className="space-y-2 pt-2">
         <button
-          onClick={() => {
-            onResetData();
-            alert("デモデータを初期状態にリセットしました！");
-          }}
-          className="w-full py-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white font-bold text-xs transition flex items-center justify-center space-x-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          <span>デモデータを初期リセット</span>
-        </button>
-
-        <button
-          onClick={() => onNavigate('landing')}
+          onClick={() => void handleLogout()}
+          disabled={isLoggingOut}
           className="w-full py-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-400 font-bold text-xs hover:text-white transition flex items-center justify-center space-x-2"
         >
           <LogOut className="w-4 h-4" />
           <span>ログアウト（LPへ戻る）</span>
         </button>
+        {logoutError && <p className="text-xs text-red-400 text-center">{logoutError}</p>}
       </div>
 
     </div>
