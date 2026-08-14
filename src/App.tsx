@@ -274,19 +274,13 @@ export default function App() {
   // Start chat directly
   const handleStartChatWithUser = (user: UserProfile) => {
     if (!currentUser) return;
-    const matchId = `match_${currentUser.id}_${user.id}`;
-    let existing = matches.find((m) => m.user.id === user.id || m.id === matchId);
+    const userIds = [currentUser.id, user.id].sort();
+    const matchId = `match_${userIds[0]}_${userIds[1]}`;
+    const existing = matches.find((m) => m.user.id === user.id || m.id === matchId);
     if (!existing) {
-      existing = {
-        id: matchId,
-        user,
-        matchedAt: '今',
-        lastMessage: 'マッチが成立しました！メッセージを送信しましょう💪',
-        lastMessageTime: '今',
-        unreadCount: 0,
-        isNewMatch: true
-      };
-      setMatches((prev) => [existing!, ...prev]);
+      setActiveMatchesTab('new');
+      setCurrentScreen('matches');
+      return;
     }
     setSelectedMatch(existing);
     setCurrentScreen('chat');
