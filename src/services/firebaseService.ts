@@ -383,14 +383,19 @@ export async function fetchLikesReceivedForUser(currentUserId: string): Promise<
   try {
     requireAuthenticatedUid(currentUserId);
     const likesSnap = await getDocs(query(collection(db, 'likes'), where('toUserId', '==', currentUserId)));
+    const matchesSnap = await getDocs(query(collection(db, 'matches'), where('users', 'array-contains', currentUserId)));
+    const matchedUserIds = new Set<string>();
+    matchesSnap.forEach((matchDoc) => {
+      const users = matchDoc.data().users as string[];
+      users.forEach((userId) => {
+        if (userId !== currentUserId) matchedUserIds.add(userId);
+      });
+    });
     const likers: UserProfile[] = [];
 
     for (const d of likesSnap.docs) {
       const fromId = d.data().fromUserId;
-      // Check if already matched
-      const userIds = [currentUserId, fromId].sort();
-      const matchSnap = await getDoc(doc(db, 'matches', `match_${userIds[0]}_${userIds[1]}`));
-      if (!matchSnap.exists()) {
+      if (!matchedUserIds.has(fromId)) {
         const profile = await getUserProfile(fromId);
         if (profile) {
           likers.push(profile);
@@ -410,62 +415,67 @@ export async function swipeRightUser(
   toUser: UserProfile,
   isSuperLike: boolean = false
 ): Promise<boolean> {
-  try {
-    requireAuthenticatedUid(fromUserId);
-    const likeDocId = `${fromUserId}_${toUser.id}`;
-    await setDoc(doc(db, 'likes', likeDocId), {
-      fromUserId,
-      toUserId: toUser.id,
-      type: isSuperLike ? 'superlike' : 'like',
-      createdAt: serverTimestamp()
-    });
+  requireAuthenticatedUid(fromUserId);
+  const likeDocId = `${fromUserId}_${toUser.id}`;
+  await setDoc(doc(db, 'likes', likeDocId), {
+    fromUserId,
+    toUserId: toUser.id,
+    type: isSuperLike ? 'superlike' : 'like',
+    createdAt: serverTimestamp()
+  });
 
-    // Check if mutual like exists
-    const reverseLikeDocId = `${toUser.id}_${fromUserId}`;
-    const reverseLikeSnap = await getDoc(doc(db, 'likes', reverseLikeDocId));
-
-    const isMutual = reverseLikeSnap.exists() || isSuperLike || (isDummyUser(toUser) && toUser.likesCurrentUser === true);
-
-    if (isMutual) {
-      const userIds = [fromUserId, toUser.id].sort();
-      const matchId = `match_${userIds[0]}_${userIds[1]}`;
-      const matchRef = doc(db, 'matches', matchId);
-      const matchSnap = await getDoc(matchRef);
-
-      if (!matchSnap.exists()) {
-        await setDoc(matchRef, {
-          id: matchId,
-          users: [userIds[0], userIds[1]],
-          matchedAt: '今',
-          lastMessage: 'マッチが成立しました！メッセージを送りましょう💪',
-          lastMessageTime: '今',
-          unreadCount: 0,
-          isNewMatch: true,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-
-        // Add welcome message
-        await addDoc(collection(db, 'matches', matchId, 'messages'), {
-          matchId,
-          // Security Rules require every user-authored message to identify the
-          // authenticated sender. System messages should move to a trusted
-          // backend in a future task.
-          senderId: fromUserId,
-          text: `マッチありがとうございます✨ 筋肉を追い込んで最高のマッチングにしましょう！`,
-          timestamp: '今',
-          createdAt: serverTimestamp()
-        });
-      }
-
-      return true; // Match established!
-    }
-
-    return false;
-  } catch (error) {
-    console.error('Error swiping right:', error);
+  const reverseLikeDocId = `${toUser.id}_${fromUserId}`;
+  const reverseLikeSnap = await getDoc(doc(db, 'likes', reverseLikeDocId));
+  if (!reverseLikeSnap.exists()) {
     return false;
   }
+
+  const userIds = [fromUserId, toUser.id].sort();
+  const matchId = `match_${userIds[0]}_${userIds[1]}`;
+  const matchRef = doc(db, 'matches', matchId);
+  let createdMatch = false;
+
+  try {
+    // The deterministic ID prevents duplicate matches. Do not read a missing
+    // match first: its read is intentionally denied by the Security Rules.
+    // An attempted overwrite is rejected by the update rule, preserving the
+    // existing match and chat state.
+    await setDoc(matchRef, {
+      id: matchId,
+      users: [userIds[0], userIds[1]],
+      matchedAt: '今',
+      lastMessage: 'マッチが成立しました！メッセージを送りましょう💪',
+      lastMessageTime: '今',
+      unreadCount: 0,
+      isNewMatch: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    createdMatch = true;
+  } catch (createError) {
+    // A concurrent request may have created the deterministic match first.
+    // Existing participants can read it; any other failure remains visible to
+    // the caller instead of being converted into a false success.
+    try {
+      const existingMatch = await getDoc(matchRef);
+      if (existingMatch.exists()) return true;
+    } catch {
+      // Preserve the original create error, which is the actionable failure.
+    }
+    throw createError;
+  }
+
+  if (createdMatch) {
+    await addDoc(collection(db, 'matches', matchId, 'messages'), {
+      matchId,
+      senderId: fromUserId,
+      text: 'マッチありがとうございます✨ 筋肉を追い込んで最高のマッチングにしましょう！',
+      timestamp: '今',
+      createdAt: serverTimestamp()
+    });
+  }
+
+  return true;
 }
 
 export async function swipeLeftUser(fromUserId: string, toUserId: string) {

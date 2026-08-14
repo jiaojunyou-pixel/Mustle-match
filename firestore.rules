@@ -46,10 +46,9 @@ service cloud.firestore {
         && exists(ownLikePath)
         && get(ownLikePath).data.fromUserId == request.auth.uid
         && get(ownLikePath).data.toUserId == otherUserId
-        && (
-          exists(reverseLikePath)
-          || get(ownLikePath).data.type == 'superlike'
-        );
+        && exists(reverseLikePath)
+        && get(reverseLikePath).data.fromUserId == otherUserId
+        && get(reverseLikePath).data.toUserId == request.auth.uid;
     }
 
     match /users/{userId} {

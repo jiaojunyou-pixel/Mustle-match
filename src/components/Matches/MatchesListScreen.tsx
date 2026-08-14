@@ -7,7 +7,7 @@ interface MatchesListScreenProps {
   matches: MatchItem[];
   likesReceived: UserProfile[];
   onSelectMatch: (match: MatchItem) => void;
-  onLikeBack: (user: UserProfile) => void;
+  onLikeBack: (user: UserProfile) => Promise<void>;
   onNavigate: (screen: AppScreen) => void;
   activeTab?: 'all' | 'new' | 'likes';
   onTabChange?: (tab: 'all' | 'new' | 'likes') => void;
@@ -24,6 +24,8 @@ export const MatchesListScreen: React.FC<MatchesListScreenProps> = ({
 }) => {
   const [internalTab, setInternalTab] = useState<'all' | 'new' | 'likes'>('all');
   const [detailUser, setDetailUser] = useState<UserProfile | null>(null);
+  const [likeBackError, setLikeBackError] = useState<string | null>(null);
+  const [processingLikeBackId, setProcessingLikeBackId] = useState<string | null>(null);
   const activeTab = externalActiveTab || internalTab;
 
   const handleSetTab = (tab: 'all' | 'new' | 'likes') => {
@@ -32,6 +34,21 @@ export const MatchesListScreen: React.FC<MatchesListScreenProps> = ({
   };
 
   const newMatches = matches.filter((m) => m.isNewMatch);
+
+  const handleLikeBack = async (user: UserProfile) => {
+    if (processingLikeBackId) return;
+    setProcessingLikeBackId(user.id);
+    setLikeBackError(null);
+    try {
+      await onLikeBack(user);
+      setDetailUser(null);
+    } catch (error) {
+      console.error('Like back failed:', error);
+      setLikeBackError('LIKE返しに失敗しました。通信状態を確認して、もう一度お試しください。');
+    } finally {
+      setProcessingLikeBackId(null);
+    }
+  };
 
   const getScreenHeaderTitle = () => {
     switch (activeTab) {
@@ -265,11 +282,12 @@ export const MatchesListScreen: React.FC<MatchesListScreenProps> = ({
                     </p>
 
                     <button
-                      onClick={() => onLikeBack(user)}
+                      onClick={() => handleLikeBack(user)}
+                      disabled={processingLikeBackId === user.id}
                       className="w-full py-2 rounded-xl bg-orange-500 text-zinc-950 font-black text-xs uppercase tracking-wider hover:bg-orange-400 transition flex items-center justify-center space-x-1 shadow-md active:scale-95"
                     >
                       <Heart className="w-3.5 h-3.5 fill-zinc-950" />
-                      <span>LIKE BACK</span>
+                      <span>{processingLikeBackId === user.id ? 'SAVING...' : 'LIKE BACK'}</span>
                     </button>
                   </div>
                 </div>
@@ -280,18 +298,18 @@ export const MatchesListScreen: React.FC<MatchesListScreenProps> = ({
 
       </div>
 
+      {likeBackError && <p role="alert" className="text-xs text-red-400 text-center mb-2">{likeBackError}</p>}
+
       {/* Detail Modal */}
       {detailUser && (
         <CardDetailModal
           user={detailUser}
           onClose={() => setDetailUser(null)}
           onLike={(u) => {
-            onLikeBack(u);
-            setDetailUser(null);
+            void handleLikeBack(u);
           }}
           onSuperLike={(u) => {
-            onLikeBack(u);
-            setDetailUser(null);
+            void handleLikeBack(u);
           }}
         />
       )}

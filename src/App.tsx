@@ -161,12 +161,7 @@ export default function App() {
     if (!canStartAuthenticatedData(authStatus, currentUser)) return;
 
     const unsubscribeMatches = subscribeToUserMatches(currentUser.id, (userMatches) => {
-      setMatches((prev) => {
-        const map = new Map<string, MatchItem>();
-        prev.forEach((m) => map.set(m.id, m));
-        userMatches.forEach((m) => map.set(m.id, m));
-        return Array.from(map.values());
-      });
+      setMatches(userMatches);
       if (!selectedMatch && userMatches.length > 0) {
         setSelectedMatch(userMatches[0]);
       }
@@ -241,38 +236,10 @@ export default function App() {
   };
 
   // Swipe Handlers
-  const handleSwipeRight = (candidate: UserProfile): boolean => {
+  const handleSwipeRight = async (candidate: UserProfile): Promise<boolean> => {
     if (!currentUser) return false;
-    // Filter candidate locally from deck
-    setCandidates((prev) => prev.filter((c) => c.id !== candidate.id));
-
-    // Determine match state
-    const isDummy = isDummyUser(candidate);
-    const isMatch = candidate.likesCurrentUser === true || (isDummy && candidate.role !== currentUser.role);
-
-    // Record in Firebase Firestore & handle mutual check
-    swipeRightUser(currentUser.id, candidate, false).then((mutual) => {
-      if (mutual) {
-        const userIds = [currentUser.id, candidate.id].sort();
-        const matchId = `match_${userIds[0]}_${userIds[1]}`;
-        const newMatch: MatchItem = {
-          id: matchId,
-          user: candidate,
-          matchedAt: '今',
-          lastMessage: 'マッチが成立しました！メッセージを送信しましょう💪',
-          lastMessageTime: '今',
-          unreadCount: 0,
-          isNewMatch: true
-        };
-
-        setMatches((prev) => {
-          if (prev.some((m) => m.user.id === candidate.id || m.id === matchId)) return prev;
-          return [newMatch, ...prev];
-        });
-      }
-    });
-
-    return isMatch;
+    const mutual = await swipeRightUser(currentUser.id, candidate, false);
+    return mutual;
   };
 
   const handleSwipeLeft = (candidate: UserProfile) => {
@@ -281,58 +248,21 @@ export default function App() {
     setCandidates((prev) => prev.filter((c) => c.id !== candidate.id));
   };
 
-  const handleSuperLike = (candidate: UserProfile): boolean => {
+  const handleSuperLike = async (candidate: UserProfile): Promise<boolean> => {
     if (!currentUser) return false;
-    setCandidates((prev) => prev.filter((c) => c.id !== candidate.id));
-
-    swipeRightUser(currentUser.id, candidate, true).then(() => {
-      const userIds = [currentUser.id, candidate.id].sort();
-      const matchId = `match_${userIds[0]}_${userIds[1]}`;
-      const newMatch: MatchItem = {
-        id: matchId,
-        user: candidate,
-        matchedAt: '今',
-        lastMessage: 'SUPER LIKEでマッチングが成立しました！★',
-        lastMessageTime: '今',
-        unreadCount: 0,
-        isNewMatch: true
-      };
-
-      setMatches((prev) => {
-        if (prev.some((m) => m.user.id === candidate.id || m.id === matchId)) return prev;
-        return [newMatch, ...prev];
-      });
-    });
-
-    return true;
+    const mutual = await swipeRightUser(currentUser.id, candidate, true);
+    return mutual;
   };
 
   const handleLikeBack = async (targetUser: UserProfile) => {
     if (!currentUser) return;
-    await swipeRightUser(currentUser.id, targetUser, true);
+    const mutual = await swipeRightUser(currentUser.id, targetUser, false);
+    if (!mutual) {
+      throw new Error('相互Likeを確認できませんでした。');
+    }
     setLikesReceived((prev) => prev.filter((u) => u.id !== targetUser.id));
-
-    const userIds = [currentUser.id, targetUser.id].sort();
-    const matchId = `match_${userIds[0]}_${userIds[1]}`;
-    const newMatch: MatchItem = {
-      id: matchId,
-      user: targetUser,
-      matchedAt: '今',
-      lastMessage: '相互いいねが成立しました！よろしくおねがいします！',
-      lastMessageTime: '今',
-      unreadCount: 0,
-      isNewMatch: true
-    };
-
-    setMatches((prev) => {
-      if (prev.some((m) => m.user.id === targetUser.id || m.id === matchId)) {
-        return prev.map((m) => m.user.id === targetUser.id ? newMatch : m);
-      }
-      return [newMatch, ...prev];
-    });
-
-    setSelectedMatch(newMatch);
-    setCurrentScreen('chat');
+    setActiveMatchesTab('new');
+    setCurrentScreen('matches');
   };
 
   // Select match & navigate to chat

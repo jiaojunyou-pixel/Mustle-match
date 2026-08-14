@@ -12,9 +12,11 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 
 const projectId = 'muscle-match-rules-test';
@@ -201,24 +203,134 @@ test('ordinary user cannot read even their own report after submission', async (
   await assertFails(getDoc(doc(authedDb('alice'), 'reports/alice-report')));
 });
 
-test('match creation requires an authenticated participant and a qualifying like', async () => {
+const matchData = (firstUserId, secondUserId) => ({
+  id: `match_${firstUserId}_${secondUserId}`,
+  users: [firstUserId, secondUserId],
+  matchedAt: 'now',
+  lastMessage: '',
+  lastMessageTime: 'now',
+  unreadCount: 0,
+  isNewMatch: true,
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
+
+test('one ordinary like is not enough to create a match', async () => {
+  await assertSucceeds(setDoc(doc(authedDb('alice'), 'likes/alice_charlie'), {
+    fromUserId: 'alice',
+    toUserId: 'charlie',
+    type: 'like',
+    createdAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(
+    doc(authedDb('alice'), 'matches/match_alice_charlie'),
+    matchData('alice', 'charlie'),
+  ));
+});
+
+test('mutual ordinary likes allow exactly one deterministic match', async () => {
+  await assertSucceeds(setDoc(doc(authedDb('alice'), 'likes/alice_charlie'), {
+    fromUserId: 'alice',
+    toUserId: 'charlie',
+    type: 'like',
+    createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(doc(authedDb('charlie'), 'likes/charlie_alice'), {
+    fromUserId: 'charlie',
+    toUserId: 'alice',
+    type: 'like',
+    createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(
+    doc(authedDb('charlie'), 'matches/match_alice_charlie'),
+    matchData('alice', 'charlie'),
+  ));
+  await assertSucceeds(getDoc(doc(authedDb('alice'), 'matches/match_alice_charlie')));
+  await assertSucceeds(getDoc(doc(authedDb('charlie'), 'matches/match_alice_charlie')));
+
+  const matches = await assertSucceeds(getDocs(query(
+    collection(authedDb('alice'), 'matches'),
+    where('users', 'array-contains', 'alice'),
+  )));
+  assert.equal(matches.docs.filter((item) => item.id === 'match_alice_charlie').length, 1);
+});
+
+test('a super like alone cannot create a match', async () => {
   await assertSucceeds(setDoc(doc(authedDb('alice'), 'likes/alice_charlie'), {
     fromUserId: 'alice',
     toUserId: 'charlie',
     type: 'superlike',
     createdAt: serverTimestamp(),
   }));
-  await assertSucceeds(setDoc(doc(authedDb('alice'), 'matches/match_alice_charlie'), {
-    id: 'match_alice_charlie',
-    users: ['alice', 'charlie'],
-    matchedAt: 'now',
-    lastMessage: '',
-    lastMessageTime: 'now',
-    unreadCount: 0,
-    isNewMatch: true,
+  await assertFails(setDoc(
+    doc(authedDb('alice'), 'matches/match_alice_charlie'),
+    matchData('alice', 'charlie'),
+  ));
+});
+
+test('a super like plus the reverse ordinary like allows a match', async () => {
+  await assertSucceeds(setDoc(doc(authedDb('alice'), 'likes/alice_charlie'), {
+    fromUserId: 'alice',
+    toUserId: 'charlie',
+    type: 'superlike',
     createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
   }));
+  await assertSucceeds(setDoc(doc(authedDb('charlie'), 'likes/charlie_alice'), {
+    fromUserId: 'charlie',
+    toUserId: 'alice',
+    type: 'like',
+    createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(
+    doc(authedDb('charlie'), 'matches/match_alice_charlie'),
+    matchData('alice', 'charlie'),
+  ));
+});
+
+test('a non-participant cannot create a match for two other users', async () => {
+  await assertFails(setDoc(
+    doc(authedDb('charlie'), 'matches/match_alice_bob'),
+    matchData('alice', 'bob'),
+  ));
+});
+
+test('a message cannot be created when its parent match was not created', async () => {
+  await assertFails(addDoc(collection(authedDb('alice'), 'matches/match_alice_charlie/messages'), {
+    matchId: 'match_alice_charlie',
+    senderId: 'alice',
+    text: 'orphan message',
+    timestamp: 'now',
+    createdAt: serverTimestamp(),
+  }));
+});
+
+test('creating the same deterministic match cannot overwrite existing chat state', async () => {
+  await assertFails(setDoc(
+    doc(authedDb('alice'), 'matches/match_alice_bob'),
+    matchData('alice', 'bob'),
+  ));
+  const existing = await assertSucceeds(getDoc(doc(authedDb('alice'), 'matches/match_alice_bob')));
+  assert.equal(existing.data().lastMessage, '');
+});
+
+test('client match flow does not pre-read a missing match and like-back is ordinary', async () => {
+  const serviceSource = await readFile('src/services/firebaseService.ts', 'utf8');
+  const appSource = await readFile('src/App.tsx', 'utf8');
+  const swipeFlow = serviceSource.slice(
+    serviceSource.indexOf('export async function swipeRightUser'),
+    serviceSource.indexOf('export async function swipeLeftUser'),
+  );
+  const createAttempt = swipeFlow.indexOf('await setDoc(matchRef');
+  const existingMatchRead = swipeFlow.indexOf('await getDoc(matchRef)');
+  assert.ok(createAttempt >= 0);
+  assert.ok(existingMatchRead > createAttempt);
+
+  const likeBackFlow = appSource.slice(
+    appSource.indexOf('const handleLikeBack'),
+    appSource.indexOf('// Select match & navigate to chat'),
+  );
+  assert.match(likeBackFlow, /swipeRightUser\(currentUser\.id, targetUser, false\)/);
+  assert.doesNotMatch(likeBackFlow, /swipeRightUser\(currentUser\.id, targetUser, true\)/);
 });
 
 assert.ok(true);
