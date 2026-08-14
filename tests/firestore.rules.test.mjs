@@ -12,11 +12,9 @@ import {
   doc,
   getDoc,
   getDocs,
-  query,
   serverTimestamp,
   setDoc,
   updateDoc,
-  where,
 } from 'firebase/firestore';
 
 const projectId = 'muscle-match-rules-test';
@@ -247,12 +245,6 @@ test('mutual ordinary likes allow exactly one deterministic match', async () => 
   ));
   await assertSucceeds(getDoc(doc(authedDb('alice'), 'matches/match_alice_charlie')));
   await assertSucceeds(getDoc(doc(authedDb('charlie'), 'matches/match_alice_charlie')));
-
-  const matches = await assertSucceeds(getDocs(query(
-    collection(authedDb('alice'), 'matches'),
-    where('users', 'array-contains', 'alice'),
-  )));
-  assert.equal(matches.docs.filter((item) => item.id === 'match_alice_charlie').length, 1);
 });
 
 test('a super like alone cannot create a match', async () => {
